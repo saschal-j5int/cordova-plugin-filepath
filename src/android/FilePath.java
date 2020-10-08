@@ -27,10 +27,13 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.List;
 import java.io.File;
+import java.util.Arrays;
+import java.util.ArrayList;
+
 
 public class FilePath extends CordovaPlugin {
 
-    private static final String TAG = "[FilePath plugin]: ";
+    private static final String TAG = "FilePathPlugin";
 
     private static final int INVALID_ACTION_ERROR_CODE = -1;
 
@@ -180,7 +183,7 @@ public class FilePath extends CordovaPlugin {
     private static boolean isGoogleDriveUri(Uri uri) {
         return "com.google.android.apps.docs.storage".equals(uri.getAuthority()) || "com.google.android.apps.docs.storage.legacy".equals(uri.getAuthority());
     }
-    
+
     /**
      * @param uri The Uri to check.
      * @return Whether the Uri authority is One Drive.
@@ -258,9 +261,20 @@ public class FilePath extends CordovaPlugin {
      *
      * @param pathData The storage type and the relative path
      */
-    private static String getPathFromExtSD(String[] pathData) {
+    private static String getPathFromExtSD(String[] pathData, List<String> subFolders) {
         final String type = pathData[0];
-        final String relativePath = "/" + pathData[1];
+
+        String relativePath = "/" + pathData[1];
+        if (subFolders.size() > 0) {
+            StringBuilder subFoldersStr = new StringBuilder();
+            for(String item : subFolders) {
+                subFoldersStr.append("/").append(item);
+            }
+            relativePath = subFoldersStr + relativePath;
+        }
+
+        // TODO Go through the path and find the actual path with case sensitive folders
+        Log.d(TAG, relativePath);
         String fullPath = "";
 
         // on my Sony devices (4.4.4 & 5.1.1), `type` is a dynamic string
@@ -271,6 +285,7 @@ public class FilePath extends CordovaPlugin {
         if ("primary".equalsIgnoreCase(type)) {
             fullPath = Environment.getExternalStorageDirectory() + relativePath;
             if (fileExists(fullPath)) {
+                Log.d(TAG, "File exists");
                 return fullPath;
             }
         }
@@ -290,7 +305,27 @@ public class FilePath extends CordovaPlugin {
             return fullPath;
         }
 
-        return fullPath;
+        Log.d(TAG, "File does not exist");
+        return null;
+    }
+
+    private static String getRealPathFromURI(Context context, Uri contentUri) {
+        Cursor cursor = null;
+        try {
+            String[] proj = { MediaStore.Images.Media.DATA };
+            cursor = context.getContentResolver().query(contentUri,  proj, null, null, null);
+            int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+            cursor.moveToFirst();
+            String res = cursor.getString(column_index);
+            return res;
+        } catch (Exception e) {
+            Log.e(TAG, "getRealPathFromURI Exception : " + e.toString());
+            return "";
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
     }
 
     /**
@@ -320,14 +355,24 @@ public class FilePath extends CordovaPlugin {
 
         // DocumentProvider
         if (isKitKat && DocumentsContract.isDocumentUri(context, uri)) {
+            Log.d(TAG, "Is DocumentProvider");
             // ExternalStorageProvider
             if (isExternalStorageDocument(uri)) {
+                Log.d(TAG, "Is isExternalStorageDocument");
+                List<String> uriSegments = new ArrayList<String>(uri.getPathSegments());
                 final String docId = DocumentsContract.getDocumentId(uri);
-                final String[] split = docId.split(":");
+                Log.d(TAG, getRealPathFromURI(context, uri));
+
+
+                Log.d(TAG, uriSegments.toString());
+                Log.d(TAG, "Is isExternalStorageDocument: " + docId);
+                String[] split = uriSegments.get(uriSegments.size()-1).split(":");
+                uriSegments.remove(uriSegments.size()-1);
                 final String type = split[0];
 
-                String fullPath = getPathFromExtSD(split);
+                String fullPath = getPathFromExtSD(split, uriSegments);
                 if (fullPath != "") {
+                    Log.d(TAG, fullPath);
                     return fullPath;
                 }
                 else {
